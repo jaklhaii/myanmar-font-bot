@@ -1,5 +1,4 @@
 python-telegram-bot>=20.0
-rabbit-v1
 pypdf>=4.0.0
 pdf2image>=1.16.0
 python-pptx>=1.0.0
