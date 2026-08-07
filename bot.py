@@ -4,7 +4,7 @@
 """
 ⚡ Professional Myanmar Font Converter & Document Processing Bot
 - Pyidaungsu Font Converter
-- PDF Text Extraction with Unicode Normalization & Quotes
+- Advanced PDF Text Cleaning & Reordering
 - PowerPoint (.pptx) Slide Image Extractor (Pure Python / Pillow)
 """
 
@@ -13,6 +13,7 @@ import os
 import sys
 import tempfile
 import unicodedata
+import re
 import converter
 from pypdf import PdfReader
 from pptx import Presentation
@@ -36,6 +37,26 @@ logger = logging.getLogger(__name__)
 
 # Retrieve Telegram Bot Token
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN") or "8183997269:AAHF5VgSgR7TJhC0HX9QgPCs74olBmoh2eA"
+
+
+def clean_myanmar_pdf_text(text: str) -> str:
+    """Clean and reorder Myanmar text extracted from PDFs where combining vowels/tones might be displaced."""
+    if not text:
+        return ""
+    
+    # Normalize unicode
+    text = unicodedata.normalize('NFC', text)
+    
+    # Fix common PDF extraction issues where leading vowels/signs get detached or misordered
+    # In Myanmar Unicode, ေ (U+1031) should precede the consonant visually, but sometimes PDF extracts it after.
+    # Let's fix ေ placement: if consonant followed by ေ, swap them.
+    # Also clean up duplicate spaces or weird artifacts
+    text = re.sub(r'([က-အဿ])ေ', r'ေ\1', text)
+    text = re.sub(r'([က-အဿ]်)([က-အဿ])ေ', r'\1ေ\2', text)
+    
+    # Apply standard converter to pyidaungsu
+    converted = converter.to_pyidaungsu(text)
+    return converted
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -118,8 +139,7 @@ async def handle_incoming_message(update: Update, context: ContextTypes.DEFAULT_
     raw_text = update.message.text
 
     try:
-        normalized_input = unicodedata.normalize('NFC', raw_text)
-        converted_text = converter.to_pyidaungsu(normalized_input)
+        converted_text = clean_myanmar_pdf_text(raw_text)
         quoted_text = f"> {converted_text.replace(chr(10), chr(10) + '> ')}"
         await update.message.reply_text(quoted_text)
     except Exception as e:
@@ -152,10 +172,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 for idx, page in enumerate(reader.pages):
                     text = page.extract_text()
                     if text:
-                        # Apply NFC normalization first to fix broken combining characters from PDF
-                        nfc_text = unicodedata.normalize('NFC', text)
-                        normalized_text = converter.to_pyidaungsu(nfc_text)
-                        full_text += f"--- Page {idx + 1} ---\n{normalized_text}\n\n"
+                        cleaned_text = clean_myanmar_pdf_text(text)
+                        full_text += f"--- Page {idx + 1} ---\n{cleaned_text}\n\n"
                 
                 if not full_text.strip():
                     full_text = "⚠️ ဤ PDF ဖိုင်ထဲတွင် ကောက်ယူနိုင်သော စာသား (Text) မတွေ့ရှိပါ။ (ပုံ သို့မဟုတ် Scanned PDF ဖြစ်နိုင်ပါသည်။)"
@@ -183,8 +201,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                             for paragraph in shape.text_frame.paragraphs:
                                 p_text = paragraph.text.strip()
                                 if p_text:
-                                    nfc_p = unicodedata.normalize('NFC', p_text)
-                                    slide_text_lines.append(converter.to_pyidaungsu(nfc_p))
+                                    slide_text_lines.append(clean_myanmar_pdf_text(p_text))
 
                     draw.rectangle([0, 0, 1280, 100], fill=(24, 43, 73))
                     draw.text((50, 35), f"Slide {idx + 1} / {slides_count}", fill=(255, 255, 255))
