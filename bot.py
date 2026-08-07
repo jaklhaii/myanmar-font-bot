@@ -28,7 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Retrieve Telegram Bot Token
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8183997269:AAHF5VgSgR7TJhC0HX9QgPCs74olBmoh2eA")
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN") or "8183997269:AAHF5VgSgR7TJhC0HX9QgPCs74olBmoh2eA"
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
