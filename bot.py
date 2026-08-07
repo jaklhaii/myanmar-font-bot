@@ -195,7 +195,10 @@ def extract_pdf_page_ocr(input_path, page_idx):
             
     except Exception as e:
         logger.error(f"OCR Error on page {page_idx}: {e}")
-        return f"--- Page {page_idx + 1} ---\n(OCR အမှား: {str(e)})"
+        error_msg = str(e)
+        if "poppler" in error_msg.lower():
+            return f"--- Page {page_idx + 1} ---\n(စနစ်အတွင်း Poppler တပ်ဆင်မှု လိုအပ်နေပါသည်။ ခဏစောင့်ပေးပါ။)"
+        return f"--- Page {page_idx + 1} ---\n(OCR အမှား: {error_msg})"
     
     return f"--- Page {page_idx + 1} ---\n(စာသားမတွေ့ရှိပါ)"
 
