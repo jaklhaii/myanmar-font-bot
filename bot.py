@@ -19,6 +19,7 @@ import shutil
 import converter
 import rabbit
 import pytesseract
+import hashlib
 from pdf2image import convert_from_path
 from pypdf import PdfReader
 from pptx import Presentation
@@ -43,6 +44,20 @@ logger = logging.getLogger(__name__)
 # Retrieve Token
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN") or "8183997269:AAHF5VgSgR7TJhC0HX9QgPCs74olBmoh2eA"
 FONT_PATH = "Pyidaungsu.ttf"
+
+def get_file_key(file_id: str, context: ContextTypes.DEFAULT_TYPE) -> str:
+    """Generate a short key for a file_id and store it in bot_data to avoid Telegram 64-byte limit."""
+    if 'file_mapping' not in context.bot_data:
+        context.bot_data['file_mapping'] = {}
+    
+    # Use MD5 hash for a short unique key (16 chars)
+    key = hashlib.md5(file_id.encode()).hexdigest()[:16]
+    context.bot_data['file_mapping'][key] = file_id
+    return key
+
+def get_file_id_from_key(key: str, context: ContextTypes.DEFAULT_TYPE) -> str:
+    """Retrieve file_id from bot_data using the short key."""
+    return context.bot_data.get('file_mapping', {}).get(key)
 
 def is_zawgyi(text: str) -> bool:
     """Robust heuristic to detect if text is Zawgyi encoded."""
@@ -76,8 +91,6 @@ def clean_myanmar_text(text: str) -> str:
     text = re.sub(r'[\uE000-\uF8FF]', '', text)
     
     # Step 2: Aggressive Font Conversion
-    # OCR output is often mixed or visual-order Unicode. 
-    # converter.to_pyidaungsu now handles this by always attempting conversion.
     try:
         text = converter.to_pyidaungsu(text)
     except Exception as e:
@@ -206,7 +219,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 
                 keyboard = []
                 if total_pages > 1:
-                    keyboard.append([InlineKeyboardButton("➡️ နောက်တစ်မျက်နှာ", callback_data=f"pdf_1_{doc.file_id}")])
+                    short_key = get_file_key(doc.file_id, context)
+                    keyboard.append([InlineKeyboardButton("➡️ နောက်တစ်မျက်နှာ", callback_data=f"pdf_1_{short_key}")])
                 
                 await update.message.reply_text(response, reply_markup=InlineKeyboardMarkup(keyboard))
                 await status_msg.delete()
@@ -222,7 +236,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 img_path = render_pptx_slide(file_path, 0, total_slides)
                 keyboard = []
                 if total_slides > 1:
-                    keyboard.append([InlineKeyboardButton("➡️ Next Slide", callback_data=f"pptx_1_{doc.file_id}")])
+                    short_key = get_file_key(doc.file_id, context)
+                    keyboard.append([InlineKeyboardButton("➡️ Next Slide", callback_data=f"pptx_1_{short_key}")])
                 
                 await update.message.reply_photo(photo=open(img_path, 'rb'), reply_markup=InlineKeyboardMarkup(keyboard))
                 await status_msg.delete()
@@ -238,8 +253,13 @@ async def send_next_part(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     data = query.data.split('_')
     file_type = data[0]
     next_idx = int(data[1])
-    file_id = data[2]
+    short_key = data[2]
     
+    file_id = get_file_id_from_key(short_key, context)
+    if not file_id:
+        await query.message.reply_text("❌ စိတ်မကောင်းပါဘူး၊ ဖိုင်သက်တမ်းကုန်ဆုံးသွားပါပြီ။ ကျေးဇူးပြု၍ ဖိုင်ကို ပြန်ပို့ပေးပါ။")
+        return
+        
     new_file = await context.bot.get_file(file_id)
     with tempfile.TemporaryDirectory() as tmp_dir:
         file_path = os.path.join(tmp_dir, "temp_file")
@@ -254,9 +274,9 @@ async def send_next_part(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             keyboard = []
             row = []
             if next_idx > 0:
-                row.append(InlineKeyboardButton("⬅️ ရှေ့တစ်မျက်နှာ", callback_data=f"pdf_{next_idx-1}_{file_id}"))
+                row.append(InlineKeyboardButton("⬅️ ရှေ့တစ်မျက်နှာ", callback_data=f"pdf_{next_idx-1}_{short_key}"))
             if next_idx < total_pages - 1:
-                row.append(InlineKeyboardButton("➡️ နောက်တစ်မျက်နှာ", callback_data=f"pdf_{next_idx+1}_{file_id}"))
+                row.append(InlineKeyboardButton("➡️ နောက်တစ်မျက်နှာ", callback_data=f"pdf_{next_idx+1}_{short_key}"))
             if row: keyboard.append(row)
             
             await query.message.reply_text(response, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -269,9 +289,9 @@ async def send_next_part(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             keyboard = []
             row = []
             if next_idx > 0:
-                row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"pptx_{next_idx-1}_{file_id}"))
+                row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"pptx_{next_idx-1}_{short_key}"))
             if next_idx < total_slides - 1:
-                row.append(InlineKeyboardButton("➡️ Next", callback_data=f"pptx_{next_idx+1}_{file_id}"))
+                row.append(InlineKeyboardButton("➡️ Next", callback_data=f"pptx_{next_idx+1}_{short_key}"))
             if row: keyboard.append(row)
             
             await query.message.reply_photo(photo=open(img_path, 'rb'), reply_markup=InlineKeyboardMarkup(keyboard))
