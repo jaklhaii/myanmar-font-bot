@@ -2,14 +2,20 @@
 # -*- coding: utf-8 -*-
 
 """
-⚡ Professional Myanmar Font Converter Bot (Refined Pro Style Edition)
-Gorgeous UI combined with clean, crystal-clear, and structured text.
+⚡ Professional Myanmar Font Converter & Document Processing Bot
+- Pyidaungsu Font Converter
+- PDF Text Extraction
+- PowerPoint (.pptx) to Slide Images Converter
 """
 
 import logging
 import os
 import sys
+import subprocess
+import tempfile
 import converter
+from pypdf import PdfReader
+from pdf2image import convert_from_path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -37,13 +43,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     welcome_text = (
         f"✨ **မင်္ဂလာပါ {user.first_name} ခင်ဗျာ** ✨\n\n"
         "──────────────────────────────\n"
-        "🎯 **Pyidaungsu Font Converter Pro Bot**\n"
+        "🎯 **Pyidaungsu Font & Document Bot Pro**\n"
         "──────────────────────────────\n\n"
-        "📌 **လုပ်ဆောင်ချက်:**\n"
-        "PowerPoint တွင် စာသားများ ဖောင့်မကွဲစေရန် မည်သည့် မြန်မာစာသားကိုမဆို **Pyidaungsu Unicode** သို့ အလိုအလျောက် ပြောင်းပေးပါသည်။\n\n"
-        "💡 **အသုံးပြုပုံ:**\n"
-        "စာသားများကို ဤ Bot ထံသို့ တိုက်ရိုက် ပို့ပေးရုံပါပဲ။ စက္ကန့်ပိုင်းအတွင်း အသင့်သုံးစာသားကို ပြန်ပို့ပေးပါမည်။\n\n"
-        "👇 အောက်ပါခလုတ်များကို နှိပ်၍ လေ့လာနိုင်ပါသည်။"
+        "📌 **လုပ်ဆောင်ချက်များ:**\n"
+        "၁။ **Font Converter:** မည်သည့် မြန်မာစာသားကိုမဆို Pyidaungsu Unicode သို့ ပြောင်းပေးခြင်း။\n"
+        "၂။ **PDF Text Extractor:** PDF ဖိုင်ပို့ပါက အတွင်းပါစာများ အကုန်ထုတ်ပေးခြင်း။\n"
+        "၃။ **PPTX to Images:** PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံများအဖြစ် ပြန်ပို့ပေးခြင်း။\n\n"
+        "💡 *အသုံးပြုရန် ဖိုင် သို့မဟုတ် စာသားများကို Bot ထံ တိုက်ရိုက် ပို့ပေးပါ။*"
     )
 
     keyboard = [
@@ -59,13 +65,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Provide a clean, structured guide for PowerPoint users."""
+    """Provide a clean, structured guide."""
     help_text = (
-        "📖 **PowerPoint တွင် အသုံးပြုရန် လမ်းညွှန်**\n\n"
-        "၁။ ဖောင့်မမှန်သော (သို့) ဇော်ဂျီစာသားများကို Bot ထံ ပို့ပါ။\n"
-        "၂။ Bot မှ ပြောင်းပေးလိုက်သော စာသားကို Copy ကူးပါ။\n"
-        "၃။ PowerPoint တွင် **Pyidaungsu** ဖောင့်ကို ရွေးချယ်ပြီး Paste လုပ်ပါ။\n\n"
-        "✨ *ယခုအခါ စာလုံးများ လုံးဝ မကွဲတော့ဘဲ သပ်ရပ်စွာ ပေါ်လာမည် ဖြစ်ပါသည်။*"
+        "📖 **အသုံးပြုပုံ လမ်းညွှန်**\n\n"
+        "• **စာသားများ:** ဇော်ဂျီ သို့မဟုတ် ဖောင့်မမှန်သည်များကို ပို့ပါက Pyidaungsu သို့ ပြောင်းပေးမည်။\n"
+        "• **PDF ဖိုင်များ:** PDF ပို့ပါက စာသားများကို ဖတ်၍ ပြန်ပို့ပေးမည်။\n"
+        "• **PPTX ဖိုင်များ:** PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံ (Images) အဖြစ် ပြန်ပို့ပေးမည်။"
     )
     query = update.callback_query
     if query:
@@ -80,9 +85,9 @@ async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Highlight professional features clearly."""
     features_text = (
         "💎 **Pro Features များနှင့် အားသာချက်များ**\n\n"
-        "• **Smart Detection:** ဇော်ဂျီနှင့် ယူနီကုတ်ကို အလိုအလျောက် ခွဲခြားပေးခြင်း။\n"
-        "• **Lightning Fast:** စက္ကန့်ပိုင်းအတွင်း အမြန်ဆုံး ပြောင်းလဲပေးခြင်း။\n"
-        "• **Error Free:** PowerPoint တင်ရာတွင် ဖောင့်ပြဿနာ လုံးဝ ကင်းဝေးစေခြင်း။"
+        "• **Smart Font Detection & Conversion**\n"
+        "• **PDF Text Extraction Engine**\n"
+        "• **PowerPoint Slide-to-Image Rendering**"
     )
     query = update.callback_query
     if query:
@@ -119,8 +124,79 @@ async def handle_incoming_message(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text("❌ စာသားပြောင်းလဲရာတွင် အမှားရှိနေပါသည်။ ထပ်မံကြိုးစားပါ။")
 
 
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle PDF and PowerPoint (.pptx) document uploads."""
+    message = update.message
+    if not message or not message.document:
+        return
+
+    doc = message.document
+    file_name = doc.file_name.lower()
+    
+    # Acknowledge receipt
+    status_msg = await message.reply_text("⏳ ဖိုင်ကို လက်ခံရရှိပါပြီ။ ဆောင်ရွက်နေပါသည်...")
+
+    try:
+        file_obj = await doc.get_file()
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = os.path.join(temp_dir, doc.file_name)
+            await file_obj.download_to_drive(input_path)
+
+            # 1. Handle PDF Files
+            if file_name.endswith('.pdf'):
+                reader = PdfReader(input_path)
+                full_text = ""
+                for idx, page in enumerate(reader.pages):
+                    text = page.extract_text()
+                    if text:
+                        full_text += f"--- Page {idx + 1} ---\n{text}\n\n"
+                
+                if not full_text.strip():
+                    full_text = "⚠️ ဤ PDF ဖိုင်ထဲတွင် ကောက်ယူနိုင်သော စာသား (Text) မတွေ့ရှိပါ။ (ပုံစံ သို့မဟုတ် Scanned PDF ဖြစ်နိုင်ပါသည်။)"
+                
+                # Split message if too long (Telegram limit 4096 chars)
+                max_length = 4000
+                for i in range(0, len(full_text), max_length):
+                    await message.reply_text(full_text[i:i + max_length])
+                await status_msg.delete()
+
+            # 2. Handle PowerPoint Files (.pptx)
+            elif file_name.endswith('.pptx'):
+                # Convert PPTX to PDF using libreoffice
+                cmd = ['libreoffice', '--headless', '--convert-to', 'pdf', input_path, '--outdir', temp_dir]
+                subprocess.run(cmd, check=True)
+                
+                base_name = os.path.splitext(doc.file_name)[0]
+                pdf_path = os.path.join(temp_dir, f"{base_name}.pdf")
+                if not os.path.exists(pdf_path):
+                    # fallback search
+                    for f in os.listdir(temp_dir):
+                        if f.endswith('.pdf'):
+                            pdf_path = os.path.join(temp_dir, f)
+                            break
+
+                # Convert PDF pages to images
+                images = convert_from_path(pdf_path)
+                await status_msg.edit_text(f"📸 PowerPoint Slides ({len(images)} slides) များကို ပုံများအဖြစ် ပြောင်းလဲပြီး ပို့ဆောင်နေပါပြီ...")
+
+                for idx, image in enumerate(images):
+                    img_path = os.path.join(temp_dir, f"slide_{idx + 1}.png")
+                    image.save(img_path, 'PNG')
+                    with open(img_path, 'rb') as photo:
+                        await message.reply_photo(photo=photo, caption=f"📄 Slide {idx + 1} / {len(images)}")
+                
+                await status_msg.delete()
+            else:
+                await status_msg.edit_text("❌ ကျေးဇူးပြု၍ **PDF** သို့မဟုတ် **PowerPoint (.pptx)** ဖိုင်များကိုသာ ပို့ပေးပါ။")
+
+    except Exception as e:
+        logger.error(f"Document processing error: {e}")
+        await status_msg.edit_text(f"❌ ဖိုင်လုပ်ဆောင်ရာတွင် အမှားအယွင်း ဖြစ်ပေါ်သွားပါသည်: {str(e)}")
+
+
 def main() -> None:
-    """Initialize and run the Refined Pro-Style Bot."""
+    """Initialize and run the Bot."""
     if not TOKEN or TOKEN == "YOUR_BOT_TOKEN_HERE":
         logger.critical("Bot Token is not configured.")
         sys.exit(1)
@@ -130,9 +206,10 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CallbackQueryHandler(button_callback_handler))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_incoming_message))
 
-    logger.info("Refined Pro-Style Font Converter Bot is running...")
+    logger.info("Enhanced Document Processing Bot is running...")
     application.run_polling()
 
 
