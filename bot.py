@@ -48,10 +48,15 @@ def is_zawgyi(text: str) -> bool:
     """Robust heuristic to detect if text is Zawgyi encoded."""
     if not text:
         return False
-    zg_chars = r'[\u107e-\u1084\u1088\u1089\u1090\u1091\u1092\u1097]'
+    # Common Zawgyi characters and PUA range
+    zg_chars = r'[\u107e-\u1084\u1088\u1089\u1090\u1091\u1092\u1097\u1033\u1034\u1035\u1039]'
     if re.search(zg_chars, text):
         return True
+    # E-kar (U+1031) or Medial Ra (U+103C) before a consonant (Visual order)
     if re.search(r'[\u1031\u103c][\u1000-\u1021]', text):
+        return True
+    # Consonant + Medial Ra + Medial Wa (Common visual pattern in OCR)
+    if re.search(r'[\u1000-\u1021][\u103C][\u103D]', text):
         return True
     return False
 
@@ -60,7 +65,7 @@ def clean_myanmar_text(text: str) -> str:
     if not text:
         return ""
     
-    # Step 1: PUA cleaning
+    # Step 1: PUA cleaning (Common in some PDF fonts)
     pua_map = {
         '\uE107': '\u1014', #  -> န
         '\uE100': '\u1000',
@@ -70,21 +75,13 @@ def clean_myanmar_text(text: str) -> str:
         text = text.replace(k, v)
     text = re.sub(r'[\uE000-\uF8FF]', '', text)
     
-    # Step 2: Zawgyi to Unicode
-    if is_zawgyi(text):
-        try:
-            text = rabbit.zg2uni(text)
-        except Exception as e:
-            logger.error(f"Rabbit conversion failed: {e}")
-    
-    # Step 3: Standardize and Normalize
-    text = unicodedata.normalize('NFC', text)
-    
-    # Step 4: Final pass for Pyidaungsu integrity
+    # Step 2: Aggressive Font Conversion
+    # OCR output is often mixed or visual-order Unicode. 
+    # converter.to_pyidaungsu now handles this by always attempting conversion.
     try:
         text = converter.to_pyidaungsu(text)
     except Exception as e:
-        logger.error(f"Converter failed: {e}")
+        logger.error(f"Conversion failed: {e}")
         
     return text
 
@@ -176,143 +173,147 @@ def render_pptx_slide(input_path, slide_idx, total_slides):
 def extract_pdf_page_ocr(input_path, page_idx):
     """Extract text from a PDF page using Tesseract OCR."""
     try:
-        # Convert specific page to image
         images = convert_from_path(input_path, first_page=page_idx+1, last_page=page_idx+1, dpi=300)
         if not images:
-            return f"--- Page {page_idx + 1} ---\n(ပုံအဖြစ်ပြောင်းလဲ၍မရပါ)"
-        
-        # Use Tesseract OCR with Myanmar and English languages
-        text = pytesseract.image_to_string(images[0], lang='mya+eng')
-        if text.strip():
-            cleaned = clean_myanmar_text(text)
-            return f"--- Page {page_idx + 1} (OCR) ---\n{cleaned}"
-        
-        # Fallback to normal extraction if OCR returns empty
-        reader = PdfReader(input_path)
-        text = reader.pages[page_idx].extract_text()
-        if text:
-            return f"--- Page {page_idx + 1} (Fallback) ---\n{clean_myanmar_text(text)}"
-            
+            return f"Error: Could not render page {page_idx+1}"
+        text = pytesseract.image_to_string(images[0], lang='mya')
+        return clean_myanmar_text(text)
     except Exception as e:
         logger.error(f"OCR Error on page {page_idx}: {e}")
-        error_msg = str(e)
-        if "poppler" in error_msg.lower():
-            return f"--- Page {page_idx + 1} ---\n(စနစ်အတွင်း Poppler တပ်ဆင်မှု လိုအပ်နေပါသည်။ ခဏစောင့်ပေးပါ။)"
-        return f"--- Page {page_idx + 1} ---\n(OCR အမှား: {error_msg})"
-    
-    return f"--- Page {page_idx + 1} ---\n(စာသားမတွေ့ရှိပါ)"
+        return f"(OCR အမှား: {e})"
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle document upload."""
-    message = update.message
-    if not message or not message.document:
-        return
-    doc = message.document
-    file_name = doc.file_name.lower()
-    if not (file_name.endswith('.pdf') or file_name.endswith('.pptx')):
-        await message.reply_text("❌ ကျေးဇူးပြု၍ **PDF** သို့မဟုတ် **PowerPoint (.pptx)** ဖိုင်များကိုသာ ပို့ပေးပါ။")
-        return
-    status_msg = await message.reply_text("⏳ ဖိုင်ကို လက်ခံရရှိပါပြီ။ OCR စနစ်ဖြင့် စစ်ဆေးနေပါသည်...")
-    try:
-        file_obj = await doc.get_file()
-        user_dir = os.path.join(tempfile.gettempdir(), f"user_{update.effective_user.id}")
-        os.makedirs(user_dir, exist_ok=True)
-        input_path = os.path.join(user_dir, doc.file_name)
-        await file_obj.download_to_drive(input_path)
-        doc_type = 'pdf' if file_name.endswith('.pdf') else 'pptx'
-        if doc_type == 'pdf':
-            reader = PdfReader(input_path)
-            total_pages = len(reader.pages)
+    """Process uploaded documents."""
+    doc = update.message.document
+    file_ext = os.path.splitext(doc.file_name)[1].lower()
+    
+    status_msg = await update.message.reply_text("⏳ ဖိုင်ကို စစ်ဆေးနေပါသည်...")
+    
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        file_path = os.path.join(tmp_dir, doc.file_name)
+        new_file = await context.bot.get_file(doc.file_id)
+        await new_file.download_to_drive(file_path)
+        
+        if file_ext == '.pdf':
+            try:
+                reader = PdfReader(file_path)
+                total_pages = len(reader.pages)
+                await status_msg.edit_text(f"📄 PDF စာမျက်နှာ {total_pages} ခု တွေ့ရှိသည်။ OCR စတင်နေပါသည်...")
+                
+                # Extract first page as preview
+                first_page_text = extract_pdf_page_ocr(file_path, 0)
+                response = f"--- Page 1 (OCR) ---\n\n{first_page_text}"
+                
+                keyboard = []
+                if total_pages > 1:
+                    keyboard.append([InlineKeyboardButton("➡️ နောက်တစ်မျက်နှာ", callback_data=f"pdf_1_{doc.file_id}")])
+                
+                await update.message.reply_text(response, reply_markup=InlineKeyboardMarkup(keyboard))
+                await status_msg.delete()
+            except Exception as e:
+                await status_msg.edit_text(f"❌ PDF ဖတ်ရာတွင် အမှားရှိပါသည်: {e}")
+                
+        elif file_ext == '.pptx':
+            try:
+                prs = Presentation(file_path)
+                total_slides = len(prs.slides)
+                await status_msg.edit_text(f"📊 PowerPoint Slide {total_slides} ခု တွေ့ရှိသည်။ Render လုပ်နေပါသည်...")
+                
+                img_path = render_pptx_slide(file_path, 0, total_slides)
+                keyboard = []
+                if total_slides > 1:
+                    keyboard.append([InlineKeyboardButton("➡️ Next Slide", callback_data=f"pptx_1_{doc.file_id}")])
+                
+                await update.message.reply_photo(photo=open(img_path, 'rb'), reply_markup=InlineKeyboardMarkup(keyboard))
+                await status_msg.delete()
+            except Exception as e:
+                await status_msg.edit_text(f"❌ PPTX ဖတ်ရာတွင် အမှားရှိပါသည်: {e}")
         else:
-            prs = Presentation(input_path)
-            total_pages = len(prs.slides)
-        context.user_data['current_doc'] = {
-            'path': input_path,
-            'type': doc_type,
-            'total': total_pages,
-            'current_idx': 0
-        }
-        await status_msg.delete()
-        await send_next_part(update, context)
-    except Exception as e:
-        logger.error(f"Upload error: {e}")
-        await message.reply_text(f"❌ အမှားအယွင်း ဖြစ်သွားပါသည်: {str(e)}")
+            await status_msg.edit_text("❌ PDF သို့မဟုတ် PPTX ဖိုင်များကိုသာ လက်ခံပါသည်။")
 
-async def send_next_part(update: Update, context: ContextTypes.DEFAULT_TYPE, send_all=False) -> None:
-    """Send pages."""
-    doc_info = context.user_data.get('current_doc')
-    if not doc_info: return
-    idx = doc_info['current_idx']
-    total = doc_info['total']
-    path = doc_info['path']
-    dtype = doc_info['type']
-    while idx < total:
-        if dtype == 'pdf':
-            content = extract_pdf_page_ocr(path, idx)
-            quoted = f"> {content.replace(chr(10), chr(10) + '> ')}"
-            if update.callback_query:
-                await update.callback_query.message.reply_text(quoted)
-            else:
-                await update.message.reply_text(quoted)
-        else:
-            img_path = render_pptx_slide(path, idx, total)
-            caption = f"> 📄 Slide {idx + 1} / {total}"
-            with open(img_path, 'rb') as photo:
-                if update.callback_query:
-                    await update.callback_query.message.reply_photo(photo=photo, caption=caption)
-                else:
-                    await update.message.reply_photo(photo=photo, caption=caption)
-        idx += 1
-        doc_info['current_idx'] = idx
-        if not send_all: break
-    if idx < total:
-        keyboard = [[
-            InlineKeyboardButton("➡️ နောက်တစ်မျက်နှာ", callback_data="next_page"),
-            InlineKeyboardButton("⏩ အကုန်ထုတ်မယ်", callback_data="extract_all")
-        ]]
-        text = f"စာမျက်နှာ {idx} ပို့ပြီးပါပြီ။ ကျန်ရှိသည်များကို ဆက်လက်ထုတ်ယူမလား?"
-        if update.callback_query:
-            await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-        else:
-            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        text = "✅ ဖိုင်တစ်ခုလုံး လုပ်ဆောင်ပြီးစီးပါပြီ။"
-        if update.callback_query:
-            await update.callback_query.message.reply_text(text)
-        else:
-            await update.message.reply_text(text)
-        context.user_data['current_doc'] = None
-
-async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle buttons."""
+async def send_next_part(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle pagination for large texts or documents."""
     query = update.callback_query
     await query.answer()
-    if query.data == "help": await help_command(update, context)
-    elif query.data == "features": await features_command(update, context)
-    elif query.data == "main_menu": await start_command(update, context)
-    elif query.data == "next_page": await send_next_part(update, context, False)
-    elif query.data == "extract_all": await send_next_part(update, context, True)
+    data = query.data.split('_')
+    file_type = data[0]
+    next_idx = int(data[1])
+    file_id = data[2]
+    
+    new_file = await context.bot.get_file(file_id)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        file_path = os.path.join(tmp_dir, "temp_file")
+        await new_file.download_to_drive(file_path)
+        
+        if file_type == 'pdf':
+            reader = PdfReader(file_path)
+            total_pages = len(reader.pages)
+            text = extract_pdf_page_ocr(file_path, next_idx)
+            response = f"--- Page {next_idx + 1} (OCR) ---\n\n{text}"
+            
+            keyboard = []
+            row = []
+            if next_idx > 0:
+                row.append(InlineKeyboardButton("⬅️ ရှေ့တစ်မျက်နှာ", callback_data=f"pdf_{next_idx-1}_{file_id}"))
+            if next_idx < total_pages - 1:
+                row.append(InlineKeyboardButton("➡️ နောက်တစ်မျက်နှာ", callback_data=f"pdf_{next_idx+1}_{file_id}"))
+            if row: keyboard.append(row)
+            
+            await query.message.reply_text(response, reply_markup=InlineKeyboardMarkup(keyboard))
+            
+        elif file_type == 'pptx':
+            prs = Presentation(file_path)
+            total_slides = len(prs.slides)
+            img_path = render_pptx_slide(file_path, next_idx, total_slides)
+            
+            keyboard = []
+            row = []
+            if next_idx > 0:
+                row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"pptx_{next_idx-1}_{file_id}"))
+            if next_idx < total_slides - 1:
+                row.append(InlineKeyboardButton("➡️ Next", callback_data=f"pptx_{next_idx+1}_{file_id}"))
+            if row: keyboard.append(row)
+            
+            await query.message.reply_photo(photo=open(img_path, 'rb'), reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Route callback queries."""
+    query = update.callback_query
+    data = query.data
+    
+    if data == "main_menu":
+        await start_command(update, context)
+    elif data == "help":
+        await help_command(update, context)
+    elif data == "features":
+        await features_command(update, context)
+    elif data.startswith(('pdf_', 'pptx_')):
+        await send_next_part(update, context)
 
 async def handle_incoming_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle text."""
-    if not update.message or not update.message.text: return
-    try:
-        converted = clean_myanmar_text(update.message.text)
-        quoted = f"> {converted.replace(chr(10), chr(10) + '> ')}"
-        await update.message.reply_text(quoted)
-    except:
-        await update.message.reply_text("❌ အမှားရှိနေပါသည်။")
+    """Handle plain text messages."""
+    text = update.message.text
+    if not text: return
+    
+    cleaned = clean_myanmar_text(text)
+    await update.message.reply_text(cleaned)
 
-def main() -> None:
-    """Run Bot."""
-    if not TOKEN: sys.exit(1)
-    application = ApplicationBuilder().token(TOKEN).build()
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CallbackQueryHandler(button_callback_handler))
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_incoming_message))
-    application.run_polling()
+def main():
+    """Start the bot."""
+    if not TOKEN:
+        logger.error("No TOKEN found. Exiting.")
+        return
 
-if __name__ == "__main__":
+    app = ApplicationBuilder().token(TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_incoming_message))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(CallbackQueryHandler(button_callback_handler))
+    
+    logger.info("Bot started...")
+    app.run_polling()
+
+if __name__ == '__main__':
     main()
