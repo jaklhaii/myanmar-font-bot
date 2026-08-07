@@ -4,7 +4,7 @@
 """
 ⚡ Professional Myanmar Font Converter & Document Processing Bot
 - Pyidaungsu Font Converter
-- PDF Text Extraction with Pyidaungsu Normalization (Plain Text / Safe Quotes)
+- PDF Text Extraction with Unicode Normalization & Quotes
 - PowerPoint (.pptx) Slide Image Extractor (Pure Python / Pillow)
 """
 
@@ -12,6 +12,7 @@ import logging
 import os
 import sys
 import tempfile
+import unicodedata
 import converter
 from pypdf import PdfReader
 from pptx import Presentation
@@ -110,14 +111,15 @@ async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def handle_incoming_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Process incoming messages and return clean converted text in quotes (plain text)."""
+    """Process incoming messages and return clean converted text in quotes."""
     if not update.message or not update.message.text:
         return
 
     raw_text = update.message.text
 
     try:
-        converted_text = converter.to_pyidaungsu(raw_text)
+        normalized_input = unicodedata.normalize('NFC', raw_text)
+        converted_text = converter.to_pyidaungsu(normalized_input)
         quoted_text = f"> {converted_text.replace(chr(10), chr(10) + '> ')}"
         await update.message.reply_text(quoted_text)
     except Exception as e:
@@ -150,11 +152,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 for idx, page in enumerate(reader.pages):
                     text = page.extract_text()
                     if text:
-                        normalized_text = converter.to_pyidaungsu(text)
+                        # Apply NFC normalization first to fix broken combining characters from PDF
+                        nfc_text = unicodedata.normalize('NFC', text)
+                        normalized_text = converter.to_pyidaungsu(nfc_text)
                         full_text += f"--- Page {idx + 1} ---\n{normalized_text}\n\n"
                 
                 if not full_text.strip():
-                    full_text = "⚠️ ဤ PDF ဖိုင်ထဲတွင် ကောက်ယူနိုင်သော စာသား (Text) မတွေ့ရှိပါ။"
+                    full_text = "⚠️ ဤ PDF ဖိုင်ထဲတွင် ကောက်ယူနိုင်သော စာသား (Text) မတွေ့ရှိပါ။ (ပုံ သို့မဟုတ် Scanned PDF ဖြစ်နိုင်ပါသည်။)"
                 
                 quoted_full_text = f"> {full_text.replace(chr(10), chr(10) + '> ')}"
 
@@ -179,7 +183,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                             for paragraph in shape.text_frame.paragraphs:
                                 p_text = paragraph.text.strip()
                                 if p_text:
-                                    slide_text_lines.append(converter.to_pyidaungsu(p_text))
+                                    nfc_p = unicodedata.normalize('NFC', p_text)
+                                    slide_text_lines.append(converter.to_pyidaungsu(nfc_p))
 
                     draw.rectangle([0, 0, 1280, 100], fill=(24, 43, 73))
                     draw.text((50, 35), f"Slide {idx + 1} / {slides_count}", fill=(255, 255, 255))
