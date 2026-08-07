@@ -4,18 +4,18 @@
 """
 ⚡ Professional Myanmar Font Converter & Document Processing Bot
 - Pyidaungsu Font Converter
-- PDF Text Extraction
-- PowerPoint (.pptx) to Slide Images Converter
+- PDF Text Extraction with Pyidaungsu Normalization & Quotes
+- PowerPoint (.pptx) Slide Image Extractor (Pure Python / Pillow)
 """
 
 import logging
 import os
 import sys
-import subprocess
 import tempfile
 import converter
 from pypdf import PdfReader
-from pdf2image import convert_from_path
+from pptx import Presentation
+from PIL import Image, ImageDraw, ImageFont
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -38,7 +38,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN") or "81839
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a stunning pro-style welcome message with crystal-clear explanations."""
+    """Send a stunning pro-style welcome message."""
     user = update.effective_user
     welcome_text = (
         f"✨ **မင်္ဂလာပါ {user.first_name} ခင်ဗျာ** ✨\n\n"
@@ -47,7 +47,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "──────────────────────────────\n\n"
         "📌 **လုပ်ဆောင်ချက်များ:**\n"
         "၁။ **Font Converter:** မည်သည့် မြန်မာစာသားကိုမဆို Pyidaungsu Unicode သို့ ပြောင်းပေးခြင်း။\n"
-        "၂။ **PDF Text Extractor:** PDF ဖိုင်ပို့ပါက အတွင်းပါစာများ အကုန်ထုတ်ပေးခြင်း။\n"
+        "၂။ **PDF Text Extractor:** PDF ဖိုင်ပို့ပါက စာများဖတ်၍ Pyidaungsu ဖြင့် Quote ပုံစံဖြင့် ပြန်ပို့ပေးခြင်း။\n"
         "၃။ **PPTX to Images:** PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံများအဖြစ် ပြန်ပို့ပေးခြင်း။\n\n"
         "💡 *အသုံးပြုရန် ဖိုင် သို့မဟုတ် စာသားများကို Bot ထံ တိုက်ရိုက် ပို့ပေးပါ။*"
     )
@@ -65,12 +65,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Provide a clean, structured guide."""
+    """Provide guide."""
     help_text = (
         "📖 **အသုံးပြုပုံ လမ်းညွှန်**\n\n"
         "• **စာသားများ:** ဇော်ဂျီ သို့မဟုတ် ဖောင့်မမှန်သည်များကို ပို့ပါက Pyidaungsu သို့ ပြောင်းပေးမည်။\n"
-        "• **PDF ဖိုင်များ:** PDF ပို့ပါက စာသားများကို ဖတ်၍ ပြန်ပို့ပေးမည်။\n"
-        "• **PPTX ဖိုင်များ:** PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံ (Images) အဖြစ် ပြန်ပို့ပေးမည်။"
+        "• **PDF ဖိုင်များ:** PDF ပို့ပါက စာသားများကို Pyidaungsu ဖောင့်ဖြင့် Quote ပုံစံ ပို့ပေးမည်။\n"
+        "• **PPTX ဖိုင်များ:** PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံ (Images) အဖြစ် ပို့ပေးမည်။"
     )
     query = update.callback_query
     if query:
@@ -82,11 +82,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Highlight professional features clearly."""
+    """Highlight features."""
     features_text = (
         "💎 **Pro Features များနှင့် အားသာချက်များ**\n\n"
         "• **Smart Font Detection & Conversion**\n"
-        "• **PDF Text Extraction Engine**\n"
+        "• **PDF Text Extraction with Clean Quotes**\n"
         "• **PowerPoint Slide-to-Image Rendering**"
     )
     query = update.callback_query
@@ -97,7 +97,7 @@ async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle callback queries smoothly."""
+    """Handle callback queries."""
     query = update.callback_query
     await query.answer()
 
@@ -110,7 +110,7 @@ async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def handle_incoming_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Process incoming messages and return clean converted text."""
+    """Process incoming messages and return clean converted text in quotes."""
     if not update.message or not update.message.text:
         return
 
@@ -118,14 +118,15 @@ async def handle_incoming_message(update: Update, context: ContextTypes.DEFAULT_
 
     try:
         converted_text = converter.to_pyidaungsu(raw_text)
-        await update.message.reply_text(converted_text)
+        quoted_text = f"> {converted_text.replace(chr(10), chr(10) + '> ')}"
+        await update.message.reply_text(quoted_text, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Conversion error: {e}")
-        await update.message.reply_text("❌ စာသားပြောင်းလဲရာတွင် အမှားရှိနေပါသည်။ ထပ်မံကြိုးစားပါ။")
+        await update.message.reply_text("> ❌ စာသားပြောင်းလဲရာတွင် အမှားရှိနေပါသည်။ ထပ်မံကြိုးစားပါ။", parse_mode="Markdown")
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle PDF and PowerPoint (.pptx) document uploads."""
+    """Handle PDF and PowerPoint (.pptx) document uploads robustly."""
     message = update.message
     if not message or not message.document:
         return
@@ -133,7 +134,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     doc = message.document
     file_name = doc.file_name.lower()
     
-    # Acknowledge receipt
     status_msg = await message.reply_text("⏳ ဖိုင်ကို လက်ခံရရှိပါပြီ။ ဆောင်ရွက်နေပါသည်...")
 
     try:
@@ -150,41 +150,61 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 for idx, page in enumerate(reader.pages):
                     text = page.extract_text()
                     if text:
-                        full_text += f"--- Page {idx + 1} ---\n{text}\n\n"
+                        # Normalize and convert extracted text to Pyidaungsu
+                        normalized_text = converter.to_pyidaungsu(text)
+                        full_text += f"*--- Page {idx + 1} ---*\n{normalized_text}\n\n"
                 
                 if not full_text.strip():
-                    full_text = "⚠️ ဤ PDF ဖိုင်ထဲတွင် ကောက်ယူနိုင်သော စာသား (Text) မတွေ့ရှိပါ။ (ပုံစံ သို့မဟုတ် Scanned PDF ဖြစ်နိုင်ပါသည်။)"
+                    full_text = "⚠️ ဤ PDF ဖိုင်ထဲတွင် ကောက်ယူနိုင်သော စာသား (Text) မတွေ့ရှိပါ။"
                 
-                # Split message if too long (Telegram limit 4096 chars)
-                max_length = 4000
-                for i in range(0, len(full_text), max_length):
-                    await message.reply_text(full_text[i:i + max_length])
+                # Format as Markdown quote block
+                quoted_full_text = f"> {full_text.replace(chr(10), chr(10) + '> ')}"
+
+                max_length = 3800
+                for i in range(0, len(quoted_full_text), max_length):
+                    await message.reply_text(quoted_full_text[i:i + max_length], parse_mode="Markdown")
                 await status_msg.delete()
 
-            # 2. Handle PowerPoint Files (.pptx)
+            # 2. Handle PowerPoint Files (.pptx) via python-pptx rendering
             elif file_name.endswith('.pptx'):
-                # Convert PPTX to PDF using libreoffice
-                cmd = ['libreoffice', '--headless', '--convert-to', 'pdf', input_path, '--outdir', temp_dir]
-                subprocess.run(cmd, check=True)
-                
-                base_name = os.path.splitext(doc.file_name)[0]
-                pdf_path = os.path.join(temp_dir, f"{base_name}.pdf")
-                if not os.path.exists(pdf_path):
-                    # fallback search
-                    for f in os.listdir(temp_dir):
-                        if f.endswith('.pdf'):
-                            pdf_path = os.path.join(temp_dir, f)
-                            break
+                prs = Presentation(input_path)
+                slides_count = len(prs.slides)
+                await status_msg.edit_text(f"📸 PowerPoint Slides ({slides_count} slides) များကို ပုံများအဖြစ် ပြောင်းလဲပြီး ပို့ဆောင်နေပါပြီ...")
 
-                # Convert PDF pages to images
-                images = convert_from_path(pdf_path)
-                await status_msg.edit_text(f"📸 PowerPoint Slides ({len(images)} slides) များကို ပုံများအဖြစ် ပြောင်းလဲပြီး ပို့ဆောင်နေပါပြီ...")
+                for idx, slide in enumerate(prs.slides):
+                    # Create an image for each slide using Pillow
+                    img = Image.new('RGB', (1280, 720), color=(245, 247, 250))
+                    draw = ImageDraw.Draw(img)
+                    
+                    # Gather slide text
+                    slide_text_lines = []
+                    for shape in slide.shapes:
+                        if shape.has_text_frame:
+                            for paragraph in shape.text_frame.paragraphs:
+                                p_text = paragraph.text.strip()
+                                if p_text:
+                                    # Normalize text to Pyidaungsu
+                                    slide_text_lines.append(converter.to_pyidaungsu(p_text))
 
-                for idx, image in enumerate(images):
+                    # Draw header background
+                    draw.rectangle([0, 0, 1280, 100], fill=(24, 43, 73))
+                    
+                    # Draw title/slide number
+                    draw.text((50, 35), f"Slide {idx + 1} / {slides_count}", fill=(255, 255, 255))
+                    
+                    # Draw slide content lines
+                    y_offset = 140
+                    for line in slide_text_lines[:15]: # Limit lines per slide image
+                        # Wrap long lines roughly
+                        draw.text((60, y_offset), line[:80], fill=(30, 30, 30))
+                        y_offset += 35
+
                     img_path = os.path.join(temp_dir, f"slide_{idx + 1}.png")
-                    image.save(img_path, 'PNG')
+                    img.save(img_path, 'PNG')
+
                     with open(img_path, 'rb') as photo:
-                        await message.reply_photo(photo=photo, caption=f"📄 Slide {idx + 1} / {len(images)}")
+                        caption_text = f"> 📄 Slide {idx + 1} / {slides_count}"
+                        await message.reply_photo(photo=photo, caption=caption_text, parse_mode="Markdown")
                 
                 await status_msg.delete()
             else:
