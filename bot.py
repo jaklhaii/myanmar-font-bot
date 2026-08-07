@@ -17,7 +17,7 @@ import re
 import converter
 from pypdf import PdfReader
 from pptx import Presentation
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -47,12 +47,9 @@ def clean_myanmar_pdf_text(text: str) -> str:
     # Normalize unicode
     text = unicodedata.normalize('NFC', text)
     
-    # Fix common PDF extraction issues where leading vowels/signs get detached or misordered
-    # In Myanmar Unicode, ေ (U+1031) should precede the consonant visually, but sometimes PDF extracts it after.
-    # Let's fix ေ placement: if consonant followed by ေ, swap them.
-    # Also clean up duplicate spaces or weird artifacts
-    text = re.sub(r'([က-အဿ])ေ', r'ေ\1', text)
-    text = re.sub(r'([က-အဿ]်)([က-အဿ])ေ', r'\1ေ\2', text)
+    # Fix common PDF extraction issues:
+    # Removed manual swapping of ေ (U+1031) as it's handled by the converter
+    # and to maintain standard Unicode logical order.
     
     # Apply standard converter to pyidaungsu
     converted = converter.to_pyidaungsu(text)
@@ -191,6 +188,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 slides_count = len(prs.slides)
                 await status_msg.edit_text(f"📸 PowerPoint Slides ({slides_count} slides) များကို ပုံများအဖြစ် ပြောင်းလဲပြီး ပို့ဆောင်နေပါပြီ...")
 
+                # Load Font for Myanmar Rendering
+                font_path = "Pyidaungsu.ttf"
+                try:
+                    font_title = ImageFont.truetype(font_path, 40)
+                    font_body = ImageFont.truetype(font_path, 25)
+                except:
+                    font_title = None
+                    font_body = None
+
                 for idx, slide in enumerate(prs.slides):
                     img = Image.new('RGB', (1280, 720), color=(245, 247, 250))
                     draw = ImageDraw.Draw(img)
@@ -204,11 +210,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                                     slide_text_lines.append(clean_myanmar_pdf_text(p_text))
 
                     draw.rectangle([0, 0, 1280, 100], fill=(24, 43, 73))
-                    draw.text((50, 35), f"Slide {idx + 1} / {slides_count}", fill=(255, 255, 255))
+                    draw.text((50, 35), f"Slide {idx + 1} / {slides_count}", fill=(255, 255, 255), font=font_title)
                     
                     y_offset = 140
                     for line in slide_text_lines[:15]:
-                        draw.text((60, y_offset), line[:80], fill=(30, 30, 30))
+                        draw.text((60, y_offset), line[:80], fill=(30, 30, 30), font=font_body)
                         y_offset += 35
 
                     img_path = os.path.join(temp_dir, f"slide_{idx + 1}.png")
