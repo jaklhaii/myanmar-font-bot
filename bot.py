@@ -4,6 +4,7 @@
 """
 ⚡ Professional Myanmar Font Converter & Document Processing Bot
 - Smart Zawgyi/Unicode Detection
+- Tesseract OCR for PDF (Fixes broken font issues)
 - Reliable PDF Text Extraction & Conversion
 - Interactive PPTX/PDF Flow
 """
@@ -17,6 +18,8 @@ import re
 import shutil
 import converter
 import rabbit
+import pytesseract
+from pdf2image import convert_from_path
 from pypdf import PdfReader
 from pptx import Presentation
 from PIL import Image, ImageDraw, ImageFont
@@ -45,31 +48,19 @@ def is_zawgyi(text: str) -> bool:
     """Robust heuristic to detect if text is Zawgyi encoded."""
     if not text:
         return False
-    
-    # Zawgyi-only characters
     zg_chars = r'[\u107e-\u1084\u1088\u1089\u1090\u1091\u1092\u1097]'
     if re.search(zg_chars, text):
         return True
-    
-    # Common Zawgyi patterns (Visual order)
-    # ေ (1031) or ြ (103C) before a consonant (1000-1021)
     if re.search(r'[\u1031\u103c][\u1000-\u1021]', text):
         return True
-    
-    # Multiple medials/vowels in Zawgyi order
-    if re.search(r'[\u103b\u103c\u103d\u103e][\u102d\u102e\u102f\u1030\u1031\u1032\u1036\u1037\u1038]', text):
-        # This can be valid Unicode but often indicates Zawgyi in mixed contexts
-        pass
-
     return False
 
-def clean_myanmar_pdf_text(text: str) -> str:
+def clean_myanmar_text(text: str) -> str:
     """Clean and convert Myanmar text with smart detection."""
     if not text:
         return ""
     
-    # Step 1: Preliminary cleaning of PUA and known broken patterns
-    # Some PDF extractors return PUA codes for standard characters
+    # Step 1: PUA cleaning
     pua_map = {
         '\uE107': '\u1014', #  -> န
         '\uE100': '\u1000',
@@ -77,23 +68,19 @@ def clean_myanmar_pdf_text(text: str) -> str:
     }
     for k, v in pua_map.items():
         text = text.replace(k, v)
-    
-    # Remove remaining PUA
     text = re.sub(r'[\uE000-\uF8FF]', '', text)
     
-    # Step 2: Check if it's Zawgyi
+    # Step 2: Zawgyi to Unicode
     if is_zawgyi(text):
         try:
-            # Force conversion from Zawgyi to Unicode
             text = rabbit.zg2uni(text)
         except Exception as e:
             logger.error(f"Rabbit conversion failed: {e}")
     
     # Step 3: Standardize and Normalize
-    # We use NFC to ensure combining characters are in the right order
     text = unicodedata.normalize('NFC', text)
     
-    # Step 4: Final pass through converter module for Pyidaungsu integrity
+    # Step 4: Final pass for Pyidaungsu integrity
     try:
         text = converter.to_pyidaungsu(text)
     except Exception as e:
@@ -107,11 +94,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     welcome_text = (
         f"✨ မင်္ဂလာပါ {user.first_name} ခင်ဗျာ ✨\n\n"
         "──────────────────────────────\n"
-        "🎯 Myanmar Font Bot Pro (Improved)\n"
+        "🎯 Myanmar Font Bot Pro (OCR Edition)\n"
         "──────────────────────────────\n\n"
         "📌 လုပ်ဆောင်ချက်များ:\n"
         "၁။ Font Converter: ဇော်ဂျီနှင့် ဖောင့်မမှန်သည်များကို Unicode သို့ အလိုအလျောက် ပြောင်းပေးခြင်း။\n"
-        "၂။ PDF Text: PDF ဖိုင်မှ စာသားများကို စာမျက်နှာအလိုက် ထုတ်ယူပေးခြင်း။\n"
+        "၂။ PDF OCR: PDF ဖောင့်လွဲနေပါက OCR စနစ်ဖြင့် ပုံဖတ်၍ စာသားများ ထုတ်ယူပေးခြင်း။\n"
         "၃။ PPTX to Images: PowerPoint ကို ပုံများအဖြစ် ပြောင်းပေးခြင်း။\n\n"
         "💡 အသုံးပြုရန် ဖိုင် သို့မဟုတ် စာသားများကို ပို့ပေးပါ။"
     )
@@ -132,7 +119,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     help_text = (
         "📖 အသုံးပြုပုံ လမ်းညွှန်\n\n"
         "• စာသားများ: ပို့လိုက်သော စာသားများကို Unicode အဖြစ် ပြောင်းလဲပေးမည်။\n"
-        "• PDF/PPTX ဖိုင်များ: ပထမစာမျက်နှာကို အရင်ပြမည်ဖြစ်ပြီး ခလုတ်များနှိပ်၍ ဆက်လက်ထုတ်ယူနိုင်ပါသည်။"
+        "• PDF ဖိုင်များ: OCR စနစ်သုံးထားသောကြောင့် ဖောင့်လွဲနေသော PDF များမှ စာသားများကို အတိကျဆုံး ထုတ်ယူပေးနိုင်ပါသည်။\n"
+        "• PPTX ဖိုင်များ: ပထမစာမျက်နှာကို အရင်ပြမည်ဖြစ်ပြီး ခလုတ်များနှိပ်၍ ဆက်လက်ထုတ်ယူနိုင်ပါသည်။"
     )
     query = update.callback_query
     if query:
@@ -144,6 +132,7 @@ async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Highlight features."""
     features_text = (
         "💎 Pro Features\n\n"
+        "• Tesseract OCR Integration (Myanmar Language Support)\n"
         "• Smart Zawgyi/Unicode Auto-Detection\n"
         "• High Quality Font Rendering\n"
         "• Interactive Document Flow"
@@ -159,47 +148,55 @@ def render_pptx_slide(input_path, slide_idx, total_slides):
     prs = Presentation(input_path)
     if slide_idx >= len(prs.slides):
         return None
-    
     slide = prs.slides[slide_idx]
     img = Image.new('RGB', (1280, 720), color=(245, 247, 250))
     draw = ImageDraw.Draw(img)
-    
     try:
         font_title = ImageFont.truetype(FONT_PATH, 42)
         font_body = ImageFont.truetype(FONT_PATH, 30)
     except:
         font_title = font_body = None
-
     slide_text_lines = []
     for shape in slide.shapes:
         if shape.has_text_frame:
             for paragraph in shape.text_frame.paragraphs:
                 p_text = paragraph.text.strip()
                 if p_text:
-                    slide_text_lines.append(clean_myanmar_pdf_text(p_text))
-
+                    slide_text_lines.append(clean_myanmar_text(p_text))
     draw.rectangle([0, 0, 1280, 100], fill=(24, 43, 73))
     draw.text((50, 30), f"Slide {slide_idx + 1} / {total_slides}", fill=(255, 255, 255), font=font_title)
-    
     y_offset = 140
     for line in slide_text_lines[:15]:
         draw.text((60, y_offset), line[:70], fill=(30, 30, 30), font=font_body)
         y_offset += 45
-
     temp_img_path = os.path.join(tempfile.gettempdir(), f"slide_render_{slide_idx}.png")
     img.save(temp_img_path, 'PNG')
     return temp_img_path
 
-def extract_pdf_page(input_path, page_idx):
-    """Extract and clean text from a single PDF page."""
-    reader = PdfReader(input_path)
-    if page_idx >= len(reader.pages):
-        return None
+def extract_pdf_page_ocr(input_path, page_idx):
+    """Extract text from a PDF page using Tesseract OCR."""
+    try:
+        # Convert specific page to image
+        images = convert_from_path(input_path, first_page=page_idx+1, last_page=page_idx+1, dpi=300)
+        if not images:
+            return f"--- Page {page_idx + 1} ---\n(ပုံအဖြစ်ပြောင်းလဲ၍မရပါ)"
+        
+        # Use Tesseract OCR with Myanmar and English languages
+        text = pytesseract.image_to_string(images[0], lang='mya+eng')
+        if text.strip():
+            cleaned = clean_myanmar_text(text)
+            return f"--- Page {page_idx + 1} (OCR) ---\n{cleaned}"
+        
+        # Fallback to normal extraction if OCR returns empty
+        reader = PdfReader(input_path)
+        text = reader.pages[page_idx].extract_text()
+        if text:
+            return f"--- Page {page_idx + 1} (Fallback) ---\n{clean_myanmar_text(text)}"
+            
+    except Exception as e:
+        logger.error(f"OCR Error on page {page_idx}: {e}")
+        return f"--- Page {page_idx + 1} ---\n(OCR အမှား: {str(e)})"
     
-    text = reader.pages[page_idx].extract_text()
-    if text:
-        cleaned = clean_myanmar_pdf_text(text)
-        return f"--- Page {page_idx + 1} ---\n{cleaned}"
     return f"--- Page {page_idx + 1} ---\n(စာသားမတွေ့ရှိပါ)"
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -207,42 +204,33 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     message = update.message
     if not message or not message.document:
         return
-
     doc = message.document
     file_name = doc.file_name.lower()
-    
     if not (file_name.endswith('.pdf') or file_name.endswith('.pptx')):
         await message.reply_text("❌ ကျေးဇူးပြု၍ **PDF** သို့မဟုတ် **PowerPoint (.pptx)** ဖိုင်များကိုသာ ပို့ပေးပါ။")
         return
-
-    status_msg = await message.reply_text("⏳ ဖိုင်ကို စစ်ဆေးနေပါသည်...")
-
+    status_msg = await message.reply_text("⏳ ဖိုင်ကို လက်ခံရရှိပါပြီ။ OCR စနစ်ဖြင့် စစ်ဆေးနေပါသည်...")
     try:
         file_obj = await doc.get_file()
         user_dir = os.path.join(tempfile.gettempdir(), f"user_{update.effective_user.id}")
         os.makedirs(user_dir, exist_ok=True)
         input_path = os.path.join(user_dir, doc.file_name)
         await file_obj.download_to_drive(input_path)
-
         doc_type = 'pdf' if file_name.endswith('.pdf') else 'pptx'
-        
         if doc_type == 'pdf':
             reader = PdfReader(input_path)
             total_pages = len(reader.pages)
         else:
             prs = Presentation(input_path)
             total_pages = len(prs.slides)
-
         context.user_data['current_doc'] = {
             'path': input_path,
             'type': doc_type,
             'total': total_pages,
             'current_idx': 0
         }
-
         await status_msg.delete()
         await send_next_part(update, context)
-
     except Exception as e:
         logger.error(f"Upload error: {e}")
         await message.reply_text(f"❌ အမှားအယွင်း ဖြစ်သွားပါသည်: {str(e)}")
@@ -250,17 +238,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def send_next_part(update: Update, context: ContextTypes.DEFAULT_TYPE, send_all=False) -> None:
     """Send pages."""
     doc_info = context.user_data.get('current_doc')
-    if not doc_info:
-        return
-
+    if not doc_info: return
     idx = doc_info['current_idx']
     total = doc_info['total']
     path = doc_info['path']
     dtype = doc_info['type']
-
     while idx < total:
         if dtype == 'pdf':
-            content = extract_pdf_page(path, idx)
+            content = extract_pdf_page_ocr(path, idx)
             quoted = f"> {content.replace(chr(10), chr(10) + '> ')}"
             if update.callback_query:
                 await update.callback_query.message.reply_text(quoted)
@@ -274,11 +259,9 @@ async def send_next_part(update: Update, context: ContextTypes.DEFAULT_TYPE, sen
                     await update.callback_query.message.reply_photo(photo=photo, caption=caption)
                 else:
                     await update.message.reply_photo(photo=photo, caption=caption)
-
         idx += 1
         doc_info['current_idx'] = idx
         if not send_all: break
-
     if idx < total:
         keyboard = [[
             InlineKeyboardButton("➡️ နောက်တစ်မျက်နှာ", callback_data="next_page"),
@@ -311,7 +294,7 @@ async def handle_incoming_message(update: Update, context: ContextTypes.DEFAULT_
     """Handle text."""
     if not update.message or not update.message.text: return
     try:
-        converted = clean_myanmar_pdf_text(update.message.text)
+        converted = clean_myanmar_text(update.message.text)
         quoted = f"> {converted.replace(chr(10), chr(10) + '> ')}"
         await update.message.reply_text(quoted)
     except:
