@@ -4,7 +4,7 @@
 """
 ⚡ Professional Myanmar Font Converter & Document Processing Bot
 - Pyidaungsu Font Converter
-- Advanced PDF Text Cleaning & Reordering
+- Advanced PDF Text Cleaning & Reordering (Visual to Logical)
 - PowerPoint (.pptx) Slide Image Extractor with Interaction Flow
 """
 
@@ -16,6 +16,7 @@ import unicodedata
 import re
 import shutil
 import converter
+import rabbit
 from pypdf import PdfReader
 from pptx import Presentation
 from PIL import Image, ImageDraw, ImageFont
@@ -40,23 +41,58 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN") or "8183997269:AAHF5VgSgR7TJhC0HX9QgPCs74olBmoh2eA"
 FONT_PATH = "Pyidaungsu.ttf"
 
-def normalize_myanmar_unicode(text: str) -> str:
-    """Normalize Myanmar Unicode to standard logical order (NFC)."""
-    if not text:
-        return ""
-    # Standard normalization
-    text = unicodedata.normalize('NFC', text)
-    # Ensure correct order for common signs if displaced during extraction
-    # Note: We keep it simple to avoid breaking valid Unicode
-    return text
-
 def clean_myanmar_pdf_text(text: str) -> str:
-    """Clean and convert text to Pyidaungsu Unicode."""
+    """
+    Clean and convert Myanmar text. 
+    Handles:
+    1. Visual order to Logical order (common in PDF extraction)
+    2. Zawgyi to Unicode conversion
+    3. PUA character cleaning
+    """
     if not text:
         return ""
-    normalized = normalize_myanmar_unicode(text)
-    converted = converter.to_pyidaungsu(normalized)
-    return converted
+    
+    # Step 1: Remove PUA characters often used in legacy fonts
+    text = re.sub(r'[\uE000-\uF8FF]', '', text)
+    
+    # Step 2: Normalize Unicode
+    text = unicodedata.normalize('NFC', text)
+    
+    # Step 3: Fix Visual Order Unicode (Common PDF issue)
+    # Rule: ေ (U+1031) and ြ (U+103C) often appear before the consonant in visual extraction
+    # Reorder: [ေ/ြ] + Consonant -> Consonant + [ေ/ြ]
+    # We use a loop to handle multiple combinations
+    for _ in range(3):
+        # ေ (1031) + Consonant (1000-1021)
+        text = re.sub(r'(\u1031)([\u1000-\u1021])', r'\2\1', text)
+        # ြ (103C) + Consonant (1000-1021)
+        text = re.sub(r'(\u103c)([\u1000-\u1021])', r'\2\1', text)
+        # ေ (1031) + Medials (103B-103E)
+        text = re.sub(r'(\u1031)([\u103b-\u103e])', r'\2\1', text)
+
+    # Step 4: Zawgyi to Unicode Conversion
+    # We check for Zawgyi-specific patterns or visual order leftovers
+    is_zawgyi = False
+    # Zawgyi specific codepoints
+    if re.search(r'[\u107e-\u1084\u1088\u1089\u1090\u1091\u1092\u1097]', text):
+        is_zawgyi = True
+    # If 'e' is still before consonant after our reordering attempts (shouldn't happen but for safety)
+    elif re.search(r'\u1031[\u1000-\u1021]', text):
+        is_zawgyi = True
+        
+    if is_zawgyi:
+        try:
+            text = rabbit.zg2uni(text)
+        except Exception as e:
+            logger.error(f"Rabbit conversion error: {e}")
+
+    # Step 5: Universal Normalization via converter module
+    try:
+        text = converter.to_pyidaungsu(text)
+    except Exception as e:
+        logger.error(f"Converter module error: {e}")
+        
+    return text
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a stunning pro-style welcome message."""
@@ -105,7 +141,7 @@ async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "💎 Pro Features များနှင့် အားသာချက်များ\n\n"
         "• Smart Font Detection & Conversion\n"
         "• Interactive Page-by-Page Extraction\n"
-        "• High Quality Myanmar Text Rendering"
+        "• High Quality Myanmar Text Rendering (Pyidaungsu)"
     )
     query = update.callback_query
     if query:
@@ -125,8 +161,8 @@ def render_pptx_slide(input_path, slide_idx, total_slides):
     
     # Load Font
     try:
-        font_title = ImageFont.truetype(FONT_PATH, 40)
-        font_body = ImageFont.truetype(FONT_PATH, 28)
+        font_title = ImageFont.truetype(FONT_PATH, 42)
+        font_body = ImageFont.truetype(FONT_PATH, 30)
     except:
         font_title = font_body = None
 
@@ -144,7 +180,7 @@ def render_pptx_slide(input_path, slide_idx, total_slides):
     y_offset = 140
     for line in slide_text_lines[:15]:
         draw.text((60, y_offset), line[:70], fill=(30, 30, 30), font=font_body)
-        y_offset += 40
+        y_offset += 45
 
     temp_img_path = os.path.join(tempfile.gettempdir(), f"slide_render_{slide_idx}.png")
     img.save(temp_img_path, 'PNG')
@@ -179,7 +215,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     try:
         file_obj = await doc.get_file()
-        # Create a persistent temp path for the user session
         user_dir = os.path.join(tempfile.gettempdir(), f"user_{update.effective_user.id}")
         os.makedirs(user_dir, exist_ok=True)
         input_path = os.path.join(user_dir, doc.file_name)
@@ -195,7 +230,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             prs = Presentation(input_path)
             total_pages = len(prs.slides)
 
-        # Store in context
         context.user_data['current_doc'] = {
             'path': input_path,
             'type': doc_type,
@@ -244,7 +278,6 @@ async def send_next_part(update: Update, context: ContextTypes.DEFAULT_TYPE, sen
         if not send_all:
             break
 
-    # If there are more pages, show buttons
     if idx < total:
         keyboard = [
             [
