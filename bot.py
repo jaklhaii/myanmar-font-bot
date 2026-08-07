@@ -4,7 +4,7 @@
 """
 ⚡ Professional Myanmar Font Converter & Document Processing Bot
 - Pyidaungsu Font Converter
-- PDF Text Extraction with Pyidaungsu Normalization & Quotes
+- PDF Text Extraction with Pyidaungsu Normalization (Plain Text / Safe Quotes)
 - PowerPoint (.pptx) Slide Image Extractor (Pure Python / Pillow)
 """
 
@@ -15,7 +15,7 @@ import tempfile
 import converter
 from pypdf import PdfReader
 from pptx import Presentation
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -41,15 +41,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Send a stunning pro-style welcome message."""
     user = update.effective_user
     welcome_text = (
-        f"✨ **မင်္ဂလာပါ {user.first_name} ခင်ဗျာ** ✨\n\n"
+        f"✨ မင်္ဂလာပါ {user.first_name} ခင်ဗျာ ✨\n\n"
         "──────────────────────────────\n"
-        "🎯 **Pyidaungsu Font & Document Bot Pro**\n"
+        "🎯 Pyidaungsu Font & Document Bot Pro\n"
         "──────────────────────────────\n\n"
-        "📌 **လုပ်ဆောင်ချက်များ:**\n"
-        "၁။ **Font Converter:** မည်သည့် မြန်မာစာသားကိုမဆို Pyidaungsu Unicode သို့ ပြောင်းပေးခြင်း။\n"
-        "၂။ **PDF Text Extractor:** PDF ဖိုင်ပို့ပါက စာများဖတ်၍ Pyidaungsu ဖြင့် Quote ပုံစံဖြင့် ပြန်ပို့ပေးခြင်း။\n"
-        "၃။ **PPTX to Images:** PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံများအဖြစ် ပြန်ပို့ပေးခြင်း။\n\n"
-        "💡 *အသုံးပြုရန် ဖိုင် သို့မဟုတ် စာသားများကို Bot ထံ တိုက်ရိုက် ပို့ပေးပါ။*"
+        "📌 လုပ်ဆောင်ချက်များ:\n"
+        "၁။ Font Converter: မည်သည့် မြန်မာစာသားကိုမဆို Pyidaungsu Unicode သို့ ပြောင်းပေးခြင်း။\n"
+        "၂။ PDF Text Extractor: PDF ဖိုင်ပို့ပါက စာများဖတ်၍ Pyidaungsu ဖြင့် Quote ပုံစံဖြင့် ပြန်ပို့ပေးခြင်း။\n"
+        "၃။ PPTX to Images: PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံများအဖြစ် ပြန်ပို့ပေးခြင်း။\n\n"
+        "💡 အသုံးပြုရန် ဖိုင် သို့မဟုတ် စာသားများကို Bot ထံ တိုက်ရိုက် ပို့ပေးပါ။"
     )
 
     keyboard = [
@@ -59,41 +59,41 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if update.message:
-        await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
     elif update.callback_query:
-        await update.callback_query.message.edit_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+        await update.callback_query.message.edit_text(welcome_text, reply_markup=reply_markup)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Provide guide."""
     help_text = (
-        "📖 **အသုံးပြုပုံ လမ်းညွှန်**\n\n"
-        "• **စာသားများ:** ဇော်ဂျီ သို့မဟုတ် ဖောင့်မမှန်သည်များကို ပို့ပါက Pyidaungsu သို့ ပြောင်းပေးမည်။\n"
-        "• **PDF ဖိုင်များ:** PDF ပို့ပါက စာသားများကို Pyidaungsu ဖောင့်ဖြင့် Quote ပုံစံ ပို့ပေးမည်။\n"
-        "• **PPTX ဖိုင်များ:** PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံ (Images) အဖြစ် ပို့ပေးမည်။"
+        "📖 အသုံးပြုပုံ လမ်းညွှန်\n\n"
+        "• စာသားများ: ဇော်ဂျီ သို့မဟုတ် ဖောင့်မမှန်သည်များကို ပို့ပါက Pyidaungsu သို့ ပြောင်းပေးမည်။\n"
+        "• PDF ဖိုင်များ: PDF ပို့ပါက စာသားများကို Pyidaungsu ဖောင့်ဖြင့် Quote ပုံစံ ပို့ပေးမည်။\n"
+        "• PPTX ဖိုင်များ: PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံ (Images) အဖြစ် ပို့ပေးမည်။"
     )
     query = update.callback_query
     if query:
         await query.answer()
         keyboard = [[InlineKeyboardButton("⬅️ ပင်မမီနူးသို့", callback_data="main_menu")]]
-        await query.message.edit_text(help_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.message.edit_text(help_text, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        await update.message.reply_text(help_text, parse_mode="Markdown")
+        await update.message.reply_text(help_text)
 
 
 async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Highlight features."""
     features_text = (
-        "💎 **Pro Features များနှင့် အားသာချက်များ**\n\n"
-        "• **Smart Font Detection & Conversion**\n"
-        "• **PDF Text Extraction with Clean Quotes**\n"
-        "• **PowerPoint Slide-to-Image Rendering**"
+        "💎 Pro Features များနှင့် အားသာချက်များ\n\n"
+        "• Smart Font Detection & Conversion\n"
+        "• PDF Text Extraction with Clean Quotes\n"
+        "• PowerPoint Slide-to-Image Rendering"
     )
     query = update.callback_query
     if query:
         await query.answer()
         keyboard = [[InlineKeyboardButton("⬅️ ပင်မမီနူးသို့", callback_data="main_menu")]]
-        await query.message.edit_text(features_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await query.message.edit_text(features_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -110,7 +110,7 @@ async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def handle_incoming_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Process incoming messages and return clean converted text in quotes."""
+    """Process incoming messages and return clean converted text in quotes (plain text)."""
     if not update.message or not update.message.text:
         return
 
@@ -119,10 +119,10 @@ async def handle_incoming_message(update: Update, context: ContextTypes.DEFAULT_
     try:
         converted_text = converter.to_pyidaungsu(raw_text)
         quoted_text = f"> {converted_text.replace(chr(10), chr(10) + '> ')}"
-        await update.message.reply_text(quoted_text, parse_mode="Markdown")
+        await update.message.reply_text(quoted_text)
     except Exception as e:
         logger.error(f"Conversion error: {e}")
-        await update.message.reply_text("> ❌ စာသားပြောင်းလဲရာတွင် အမှားရှိနေပါသည်။ ထပ်မံကြိုးစားပါ။", parse_mode="Markdown")
+        await update.message.reply_text("> ❌ စာသားပြောင်းလဲရာတွင် အမှားရှိနေပါသည်။ ထပ်မံကြိုးစားပါ။")
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -150,19 +150,17 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 for idx, page in enumerate(reader.pages):
                     text = page.extract_text()
                     if text:
-                        # Normalize and convert extracted text to Pyidaungsu
                         normalized_text = converter.to_pyidaungsu(text)
-                        full_text += f"*--- Page {idx + 1} ---*\n{normalized_text}\n\n"
+                        full_text += f"--- Page {idx + 1} ---\n{normalized_text}\n\n"
                 
                 if not full_text.strip():
                     full_text = "⚠️ ဤ PDF ဖိုင်ထဲတွင် ကောက်ယူနိုင်သော စာသား (Text) မတွေ့ရှိပါ။"
                 
-                # Format as Markdown quote block
                 quoted_full_text = f"> {full_text.replace(chr(10), chr(10) + '> ')}"
 
                 max_length = 3800
                 for i in range(0, len(quoted_full_text), max_length):
-                    await message.reply_text(quoted_full_text[i:i + max_length], parse_mode="Markdown")
+                    await message.reply_text(quoted_full_text[i:i + max_length])
                 await status_msg.delete()
 
             # 2. Handle PowerPoint Files (.pptx) via python-pptx rendering
@@ -172,30 +170,22 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await status_msg.edit_text(f"📸 PowerPoint Slides ({slides_count} slides) များကို ပုံများအဖြစ် ပြောင်းလဲပြီး ပို့ဆောင်နေပါပြီ...")
 
                 for idx, slide in enumerate(prs.slides):
-                    # Create an image for each slide using Pillow
                     img = Image.new('RGB', (1280, 720), color=(245, 247, 250))
                     draw = ImageDraw.Draw(img)
                     
-                    # Gather slide text
                     slide_text_lines = []
                     for shape in slide.shapes:
                         if shape.has_text_frame:
                             for paragraph in shape.text_frame.paragraphs:
                                 p_text = paragraph.text.strip()
                                 if p_text:
-                                    # Normalize text to Pyidaungsu
                                     slide_text_lines.append(converter.to_pyidaungsu(p_text))
 
-                    # Draw header background
                     draw.rectangle([0, 0, 1280, 100], fill=(24, 43, 73))
-                    
-                    # Draw title/slide number
                     draw.text((50, 35), f"Slide {idx + 1} / {slides_count}", fill=(255, 255, 255))
                     
-                    # Draw slide content lines
                     y_offset = 140
-                    for line in slide_text_lines[:15]: # Limit lines per slide image
-                        # Wrap long lines roughly
+                    for line in slide_text_lines[:15]:
                         draw.text((60, y_offset), line[:80], fill=(30, 30, 30))
                         y_offset += 35
 
@@ -204,7 +194,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
                     with open(img_path, 'rb') as photo:
                         caption_text = f"> 📄 Slide {idx + 1} / {slides_count}"
-                        await message.reply_photo(photo=photo, caption=caption_text, parse_mode="Markdown")
+                        await message.reply_photo(photo=photo, caption=caption_text)
                 
                 await status_msg.delete()
             else:
