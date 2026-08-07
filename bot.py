@@ -5,7 +5,7 @@
 ⚡ Professional Myanmar Font Converter & Document Processing Bot
 - Pyidaungsu Font Converter
 - Advanced PDF Text Cleaning & Reordering
-- PowerPoint (.pptx) Slide Image Extractor (Pure Python / Pillow)
+- PowerPoint (.pptx) Slide Image Extractor with Interaction Flow
 """
 
 import logging
@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unicodedata
 import re
+import shutil
 import converter
 from pypdf import PdfReader
 from pptx import Presentation
@@ -37,24 +38,25 @@ logger = logging.getLogger(__name__)
 
 # Retrieve Telegram Bot Token
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN") or "8183997269:AAHF5VgSgR7TJhC0HX9QgPCs74olBmoh2eA"
+FONT_PATH = "Pyidaungsu.ttf"
 
-
-def clean_myanmar_pdf_text(text: str) -> str:
-    """Clean and reorder Myanmar text extracted from PDFs where combining vowels/tones might be displaced."""
+def normalize_myanmar_unicode(text: str) -> str:
+    """Normalize Myanmar Unicode to standard logical order (NFC)."""
     if not text:
         return ""
-    
-    # Normalize unicode
+    # Standard normalization
     text = unicodedata.normalize('NFC', text)
-    
-    # Fix common PDF extraction issues:
-    # Removed manual swapping of ေ (U+1031) as it's handled by the converter
-    # and to maintain standard Unicode logical order.
-    
-    # Apply standard converter to pyidaungsu
-    converted = converter.to_pyidaungsu(text)
-    return converted
+    # Ensure correct order for common signs if displaced during extraction
+    # Note: We keep it simple to avoid breaking valid Unicode
+    return text
 
+def clean_myanmar_pdf_text(text: str) -> str:
+    """Clean and convert text to Pyidaungsu Unicode."""
+    if not text:
+        return ""
+    normalized = normalize_myanmar_unicode(text)
+    converted = converter.to_pyidaungsu(normalized)
+    return converted
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a stunning pro-style welcome message."""
@@ -66,13 +68,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "──────────────────────────────\n\n"
         "📌 လုပ်ဆောင်ချက်များ:\n"
         "၁။ Font Converter: မည်သည့် မြန်မာစာသားကိုမဆို Pyidaungsu Unicode သို့ ပြောင်းပေးခြင်း။\n"
-        "၂။ PDF Text Extractor: PDF ဖိုင်ပို့ပါက စာများဖတ်၍ Pyidaungsu ဖြင့် Quote ပုံစံဖြင့် ပြန်ပို့ပေးခြင်း။\n"
-        "၃။ PPTX to Images: PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံများအဖြစ် ပြန်ပို့ပေးခြင်း။\n\n"
-        "💡 အသုံးပြုရန် ဖိုင် သို့မဟုတ် စာသားများကို Bot ထံ တိုက်ရိုက် ပို့ပေးပါ။"
+        "၂။ PDF Text Extractor: PDF ဖိုင်ပို့ပါက စာများဖတ်၍ ပြန်ပို့ပေးခြင်း။\n"
+        "၃။ PPTX to Images: PowerPoint ဖိုင်ပို့ပါက Slide များကို ပုံများအဖြစ် ပြောင်းပေးခြင်း။\n\n"
+        "💡 အသုံးပြုရန် ဖိုင် သို့မဟုတ် စာသားများကို ပို့ပေးပါ။"
     )
 
     keyboard = [
-        [InlineKeyboardButton("📖 အသုံးပြုပုံ အသေးစိတ်", callback_data="help")],
+        [InlineKeyboardButton("📖 အသုံးပြုပုံ လမ်းညွှန်", callback_data="help")],
         [InlineKeyboardButton("💎 Pro Features", callback_data="features")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -82,14 +84,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     elif update.callback_query:
         await update.callback_query.message.edit_text(welcome_text, reply_markup=reply_markup)
 
-
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Provide guide."""
     help_text = (
         "📖 အသုံးပြုပုံ လမ်းညွှန်\n\n"
         "• စာသားများ: ဇော်ဂျီ သို့မဟုတ် ဖောင့်မမှန်သည်များကို ပို့ပါက Pyidaungsu သို့ ပြောင်းပေးမည်။\n"
-        "• PDF ဖိုင်များ: PDF ပို့ပါက စာသားများကို Pyidaungsu ဖောင့်ဖြင့် Quote ပုံစံ ပို့ပေးမည်။\n"
-        "• PPTX ဖိုင်များ: PowerPoint ဖိုင်ပို့ပါက Slide တစ်ခုချင်းစီကို ပုံ (Images) အဖြစ် ပို့ပေးမည်။"
+        "• PDF/PPTX ဖိုင်များ: ဖိုင်ပို့ပါက ပထမစာမျက်နှာကို အရင်ပြသမည်ဖြစ်ပြီး ကျန်ရှိသည်များကို တစ်ခုချင်းစီ သို့မဟုတ် အားလုံးကို တစ်ခါတည်း ထုတ်ယူနိုင်ပါသည်။"
     )
     query = update.callback_query
     if query:
@@ -99,14 +99,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     else:
         await update.message.reply_text(help_text)
 
-
 async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Highlight features."""
     features_text = (
         "💎 Pro Features များနှင့် အားသာချက်များ\n\n"
         "• Smart Font Detection & Conversion\n"
-        "• PDF Text Extraction with Clean Quotes\n"
-        "• PowerPoint Slide-to-Image Rendering"
+        "• Interactive Page-by-Page Extraction\n"
+        "• High Quality Myanmar Text Rendering"
     )
     query = update.callback_query
     if query:
@@ -114,9 +113,166 @@ async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         keyboard = [[InlineKeyboardButton("⬅️ ပင်မမီနူးသို့", callback_data="main_menu")]]
         await query.message.edit_text(features_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
+def render_pptx_slide(input_path, slide_idx, total_slides):
+    """Render a single PPTX slide to an image."""
+    prs = Presentation(input_path)
+    if slide_idx >= len(prs.slides):
+        return None
+    
+    slide = prs.slides[slide_idx]
+    img = Image.new('RGB', (1280, 720), color=(245, 247, 250))
+    draw = ImageDraw.Draw(img)
+    
+    # Load Font
+    try:
+        font_title = ImageFont.truetype(FONT_PATH, 40)
+        font_body = ImageFont.truetype(FONT_PATH, 28)
+    except:
+        font_title = font_body = None
+
+    slide_text_lines = []
+    for shape in slide.shapes:
+        if shape.has_text_frame:
+            for paragraph in shape.text_frame.paragraphs:
+                p_text = paragraph.text.strip()
+                if p_text:
+                    slide_text_lines.append(clean_myanmar_pdf_text(p_text))
+
+    draw.rectangle([0, 0, 1280, 100], fill=(24, 43, 73))
+    draw.text((50, 30), f"Slide {slide_idx + 1} / {total_slides}", fill=(255, 255, 255), font=font_title)
+    
+    y_offset = 140
+    for line in slide_text_lines[:15]:
+        draw.text((60, y_offset), line[:70], fill=(30, 30, 30), font=font_body)
+        y_offset += 40
+
+    temp_img_path = os.path.join(tempfile.gettempdir(), f"slide_render_{slide_idx}.png")
+    img.save(temp_img_path, 'PNG')
+    return temp_img_path
+
+def extract_pdf_page(input_path, page_idx):
+    """Extract and clean text from a single PDF page."""
+    reader = PdfReader(input_path)
+    if page_idx >= len(reader.pages):
+        return None
+    
+    text = reader.pages[page_idx].extract_text()
+    if text:
+        cleaned = clean_myanmar_pdf_text(text)
+        return f"--- Page {page_idx + 1} ---\n{cleaned}"
+    return f"--- Page {page_idx + 1} ---\n(စာသားမတွေ့ရှိပါ)"
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle initial document upload."""
+    message = update.message
+    if not message or not message.document:
+        return
+
+    doc = message.document
+    file_name = doc.file_name.lower()
+    
+    if not (file_name.endswith('.pdf') or file_name.endswith('.pptx')):
+        await message.reply_text("❌ ကျေးဇူးပြု၍ **PDF** သို့မဟုတ် **PowerPoint (.pptx)** ဖိုင်များကိုသာ ပို့ပေးပါ။")
+        return
+
+    status_msg = await message.reply_text("⏳ ဖိုင်ကို လက်ခံရရှိပါပြီ။ စစ်ဆေးနေပါသည်...")
+
+    try:
+        file_obj = await doc.get_file()
+        # Create a persistent temp path for the user session
+        user_dir = os.path.join(tempfile.gettempdir(), f"user_{update.effective_user.id}")
+        os.makedirs(user_dir, exist_ok=True)
+        input_path = os.path.join(user_dir, doc.file_name)
+        await file_obj.download_to_drive(input_path)
+
+        doc_type = 'pdf' if file_name.endswith('.pdf') else 'pptx'
+        total_pages = 0
+        
+        if doc_type == 'pdf':
+            reader = PdfReader(input_path)
+            total_pages = len(reader.pages)
+        else:
+            prs = Presentation(input_path)
+            total_pages = len(prs.slides)
+
+        # Store in context
+        context.user_data['current_doc'] = {
+            'path': input_path,
+            'type': doc_type,
+            'total': total_pages,
+            'current_idx': 0
+        }
+
+        await status_msg.delete()
+        await send_next_part(update, context)
+
+    except Exception as e:
+        logger.error(f"Upload error: {e}")
+        await message.reply_text(f"❌ အမှားအယွင်း ဖြစ်သွားပါသည်: {str(e)}")
+
+async def send_next_part(update: Update, context: ContextTypes.DEFAULT_TYPE, send_all=False) -> None:
+    """Process and send the next page or all pages."""
+    doc_info = context.user_data.get('current_doc')
+    if not doc_info:
+        return
+
+    idx = doc_info['current_idx']
+    total = doc_info['total']
+    path = doc_info['path']
+    dtype = doc_info['type']
+
+    while idx < total:
+        if dtype == 'pdf':
+            content = extract_pdf_page(path, idx)
+            quoted = f"> {content.replace(chr(10), chr(10) + '> ')}"
+            if update.callback_query:
+                await update.callback_query.message.reply_text(quoted)
+            else:
+                await update.message.reply_text(quoted)
+        else:
+            img_path = render_pptx_slide(path, idx, total)
+            caption = f"> 📄 Slide {idx + 1} / {total}"
+            with open(img_path, 'rb') as photo:
+                if update.callback_query:
+                    await update.callback_query.message.reply_photo(photo=photo, caption=caption)
+                else:
+                    await update.message.reply_photo(photo=photo, caption=caption)
+
+        idx += 1
+        doc_info['current_idx'] = idx
+        
+        if not send_all:
+            break
+
+    # If there are more pages, show buttons
+    if idx < total:
+        keyboard = [
+            [
+                InlineKeyboardButton("➡️ နောက်တစ်မျက်နှာ", callback_data="next_page"),
+                InlineKeyboardButton("⏩ အကုန်ထုတ်မယ်", callback_data="extract_all")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        text = f"စာမျက်နှာ {idx} ကို ပို့ဆောင်ပြီးပါပြီ။ ဆက်လက်ထုတ်ယူမလား?"
+        
+        if update.callback_query:
+            await update.callback_query.message.reply_text(text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(text, reply_markup=reply_markup)
+    else:
+        text = "✅ ဖိုင်တစ်ခုလုံး လုပ်ဆောင်ပြီးစီးပါပြီ။"
+        if update.callback_query:
+            await update.callback_query.message.reply_text(text)
+        else:
+            await update.message.reply_text(text)
+        # Cleanup
+        if os.path.exists(path):
+            try: shutil.rmtree(os.path.dirname(path))
+            except: pass
+        context.user_data['current_doc'] = None
 
 async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle callback queries."""
+    """Handle interactive buttons."""
     query = update.callback_query
     await query.answer()
 
@@ -126,112 +282,23 @@ async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         await features_command(update, context)
     elif query.data == "main_menu":
         await start_command(update, context)
-
+    elif query.data == "next_page":
+        await send_next_part(update, context, send_all=False)
+    elif query.data == "extract_all":
+        await send_next_part(update, context, send_all=True)
 
 async def handle_incoming_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Process incoming messages and return clean converted text in quotes."""
+    """Handle plain text conversion."""
     if not update.message or not update.message.text:
         return
-
     raw_text = update.message.text
-
     try:
-        converted_text = clean_myanmar_pdf_text(raw_text)
-        quoted_text = f"> {converted_text.replace(chr(10), chr(10) + '> ')}"
-        await update.message.reply_text(quoted_text)
+        converted = clean_myanmar_pdf_text(raw_text)
+        quoted = f"> {converted.replace(chr(10), chr(10) + '> ')}"
+        await update.message.reply_text(quoted)
     except Exception as e:
-        logger.error(f"Conversion error: {e}")
-        await update.message.reply_text("> ❌ စာသားပြောင်းလဲရာတွင် အမှားရှိနေပါသည်။ ထပ်မံကြိုးစားပါ။")
-
-
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle PDF and PowerPoint (.pptx) document uploads robustly."""
-    message = update.message
-    if not message or not message.document:
-        return
-
-    doc = message.document
-    file_name = doc.file_name.lower()
-    
-    status_msg = await message.reply_text("⏳ ဖိုင်ကို လက်ခံရရှိပါပြီ။ ဆောင်ရွက်နေပါသည်...")
-
-    try:
-        file_obj = await doc.get_file()
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            input_path = os.path.join(temp_dir, doc.file_name)
-            await file_obj.download_to_drive(input_path)
-
-            # 1. Handle PDF Files
-            if file_name.endswith('.pdf'):
-                reader = PdfReader(input_path)
-                full_text = ""
-                for idx, page in enumerate(reader.pages):
-                    text = page.extract_text()
-                    if text:
-                        cleaned_text = clean_myanmar_pdf_text(text)
-                        full_text += f"--- Page {idx + 1} ---\n{cleaned_text}\n\n"
-                
-                if not full_text.strip():
-                    full_text = "⚠️ ဤ PDF ဖိုင်ထဲတွင် ကောက်ယူနိုင်သော စာသား (Text) မတွေ့ရှိပါ။ (ပုံ သို့မဟုတ် Scanned PDF ဖြစ်နိုင်ပါသည်။)"
-                
-                quoted_full_text = f"> {full_text.replace(chr(10), chr(10) + '> ')}"
-
-                max_length = 3800
-                for i in range(0, len(quoted_full_text), max_length):
-                    await message.reply_text(quoted_full_text[i:i + max_length])
-                await status_msg.delete()
-
-            # 2. Handle PowerPoint Files (.pptx) via python-pptx rendering
-            elif file_name.endswith('.pptx'):
-                prs = Presentation(input_path)
-                slides_count = len(prs.slides)
-                await status_msg.edit_text(f"📸 PowerPoint Slides ({slides_count} slides) များကို ပုံများအဖြစ် ပြောင်းလဲပြီး ပို့ဆောင်နေပါပြီ...")
-
-                # Load Font for Myanmar Rendering
-                font_path = "Pyidaungsu.ttf"
-                try:
-                    font_title = ImageFont.truetype(font_path, 40)
-                    font_body = ImageFont.truetype(font_path, 25)
-                except:
-                    font_title = None
-                    font_body = None
-
-                for idx, slide in enumerate(prs.slides):
-                    img = Image.new('RGB', (1280, 720), color=(245, 247, 250))
-                    draw = ImageDraw.Draw(img)
-                    
-                    slide_text_lines = []
-                    for shape in slide.shapes:
-                        if shape.has_text_frame:
-                            for paragraph in shape.text_frame.paragraphs:
-                                p_text = paragraph.text.strip()
-                                if p_text:
-                                    slide_text_lines.append(clean_myanmar_pdf_text(p_text))
-
-                    draw.rectangle([0, 0, 1280, 100], fill=(24, 43, 73))
-                    draw.text((50, 35), f"Slide {idx + 1} / {slides_count}", fill=(255, 255, 255), font=font_title)
-                    
-                    y_offset = 140
-                    for line in slide_text_lines[:15]:
-                        draw.text((60, y_offset), line[:80], fill=(30, 30, 30), font=font_body)
-                        y_offset += 35
-
-                    img_path = os.path.join(temp_dir, f"slide_{idx + 1}.png")
-                    img.save(img_path, 'PNG')
-
-                    with open(img_path, 'rb') as photo:
-                        caption_text = f"> 📄 Slide {idx + 1} / {slides_count}"
-                        await message.reply_photo(photo=photo, caption=caption_text)
-                
-                await status_msg.delete()
-            else:
-                await status_msg.edit_text("❌ ကျေးဇူးပြု၍ **PDF** သို့မဟုတ် **PowerPoint (.pptx)** ဖိုင်များကိုသာ ပို့ပေးပါ။")
-
-    except Exception as e:
-        logger.error(f"Document processing error: {e}")
-        await status_msg.edit_text(f"❌ ဖိုင်လုပ်ဆောင်ရာတွင် အမှားအယွင်း ဖြစ်ပေါ်သွားပါသည်: {str(e)}")
-
+        logger.error(f"Text error: {e}")
+        await update.message.reply_text("❌ စာသားပြောင်းလဲရာတွင် အမှားရှိနေပါသည်။")
 
 def main() -> None:
     """Initialize and run the Bot."""
@@ -249,7 +316,6 @@ def main() -> None:
 
     logger.info("Enhanced Document Processing Bot is running...")
     application.run_polling()
-
 
 if __name__ == "__main__":
     main()
